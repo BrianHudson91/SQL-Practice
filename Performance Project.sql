@@ -4,8 +4,6 @@ Today I will be creating a new database, tables, data sets, then formatting and 
 
 */
 
-
-
 --1. Create Database
 
 Create Database test_db
@@ -27,7 +25,7 @@ pe_rating varchar(50)              --Wrong data type
 );
 
 
--- 3. Create our datasets for our table
+--3.  Create our dataset for our table
 
 
 INSERT INTO test1 VALUES
@@ -66,11 +64,14 @@ INSERT INTO test2 VALUES
 
 
 /*
+
  4. Formatting and Modifying
 
- Since there are duplicate IDs, we will combine the data, excluding IDs, into the first table
- */
 
+ Since there are duplicate IDs and we want to combine the data permanently, we will insert 
+ the data from the second into the first, excluding IDs since it will auto populate
+ 
+*/
 
 INSERT INTO test1 (lastname,firstname,jobtitle,company,salary,sucessfull_shipments,pe_rating)
 SELECT lastname, firstname, jobtitle, company, salary, sucessfull_shipments, pe_rating
@@ -86,50 +87,78 @@ WHERE ID = 1
 
 
 
+/* 
+There are two ways we can go about creating the salary performence data:
+1. If you don't want a permanent table, we can create a CTE with a Join to show the new salary increase with the partition data - much less code
+2. If we want a p/table, we can create t/tables and join them to create a final product.
+
+Below is the the CTE method with a Join statement
+
+*/
+--1.
+
+With avg_shipments (ID, successfull_shipments, avg_shipments_by_company) as
+		(SELECT id, sucessfull_shipments, AVG(cast(sucessfull_shipments AS INT)) 
+		     OVER (Partition BY company) as avg_shipments_by_company from test1)
+
+SELECT t.ID, t.company, t.lastname, t.firstname, t.jobtitle, t.sucessfull_shipments, av.avg_shipments_by_company, t.pe_rating, t.salary,
+CASE
+	WHEN sucessfull_shipments > av.avg_shipments_by_company AND pe_rating > 4
+		THEN salary + (Salary * .05)
+	WHEN sucessfull_shipments > av.avg_shipments_by_company AND pe_rating > 3
+		THEN salary + (Salary * .04)
+	ELSE salary + (Salary * .02)
+END AS 'new_salary'
+FROM test1 t
+JOIN avg_shipments av ON
+	t.id = av.id
+ORDER BY t.company, t.lastname
+	
+
+
+
+
+--2. Below is the t/table(s) method before joining to create a final table
+
 /*
 
 Categorize by performance to find salary increase
-and create a temp table so we may use the partition data
+and create a t/table so we may use the partition data
 
 */
-
 
 
 SELECT ID, company, lastname, firstname, sucessfull_shipments,
 	AVG(cast(sucessfull_shipments AS INT)) OVER (Partition BY company) AS avg_shipments_by_company, salary, pe_rating
 INTO #temp_pe
 FROM test1
-GROUP by ID, lastname, firstname, company, sucessfull_shipments, salary, pe_rating
-ORDER BY company, sucessfull_shipments desc;
-
 
 /* 
 
- We will now create a temporary with new salary adjustments by using
- the partition data set in our case statement to create our final table.
+ We will now create another t/table with new salary adjustments by using
+ the partition data set in a case statement to create our final table.
  
 
 */
 
 SELECT ID, company, lastname, firstname, sucessfull_shipments, avg_shipments_by_company, pe_rating, salary,
 CASE
-	WHEN sucessfull_shipments > avg_shipments_by_company AND pe_rating >= 4
+	WHEN sucessfull_shipments > avg_shipments_by_company AND pe_rating > 4
 		THEN salary + (Salary * .05)
-	WHEN sucessfull_shipments > avg_shipments_by_company AND pe_rating > 2
+	WHEN sucessfull_shipments > avg_shipments_by_company AND pe_rating > 3
 		THEN salary + (Salary * .04)
 	ELSE salary + (Salary * .02)
 END AS 'new_salary'
 INTO #combined_employees
 FROM #temp_pe
-GROUP BY ID, company, lastname, firstname, sucessfull_shipments
-		  , avg_shipments_by_company, pe_rating, salary
-ORDER BY ID;
+
+
 DROP TABLE #temp_pe;   ---We are removing the earlier temp table as it is no longer needed
 
 
 /*
 
-We are now creating our final, combined table.
+We are now creating our final table.
 
 */
 
@@ -137,14 +166,16 @@ Select co.ID, co.company, co.lastname, co.firstname, test1.jobtitle, co.sucessfu
 INTO Final_table
 from #combined_employees co
 JOIN test1	
-	ON co.id = test1.ID
-ORDER BY co.ID;
+	ON co.id = test1.ID;
 
-DROP Table #combined_employees --remove last temp table, no longer needed
+DROP Table #combined_employees; --remove last temp table, no longer needed
 
 
 --Completed final table
 Select *
-FROM Final_table;
+FROM Final_table
+Order by 1;
+
+
 
 
